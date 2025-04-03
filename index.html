@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=.6">
     <title>Breakout Game for Rabbit R1</title>
     <style>
         * {
@@ -535,24 +535,25 @@
         }
         
         // Keyboard event handlers
-        function keyDownHandler(e) {
-            if (e.key === 'Right' || e.key === 'ArrowRight') {
-                rightPressed = true;
-                e.preventDefault();
-            } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
-                leftPressed = true;
-                e.preventDefault();
-            } else if (e.key === 'p' || e.key === 'P') {
-                togglePause();
-            }
-        }
+function keyDownHandler(e) {
+    const movementStep = 30; // You can tweak this value for sensitivity
+
+    if (e.key === 'Down' || e.key === 'ArrowDown') {
+        targetPaddleX += movementStep;
+        e.preventDefault();
+    } else if (e.key === 'Up' || e.key === 'ArrowUp') {
+        targetPaddleX -= movementStep;
+        e.preventDefault();
+    } else if (e.key === 'p' || e.key === 'P') {
+        togglePause();
+    }
+
+    // Constrain the paddle within the game area
+    targetPaddleX = Math.max(0, Math.min(GAME_WIDTH - paddleWidth, targetPaddleX));
+}
         
         function keyUpHandler(e) {
-            if (e.key === 'Right' || e.key === 'ArrowRight') {
-                rightPressed = false;
-            } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
-                leftPressed = false;
-            }
+
         }
         
         // Toggle pause state
