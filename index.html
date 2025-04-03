@@ -539,10 +539,10 @@ function keyDownHandler(e) {
     const movementStep = 30; // You can tweak this value for sensitivity
 
     if (e.key === 'Down' || e.key === 'ArrowDown') {
-        targetPaddleX += movementStep;
+        targetPaddleX -= movementStep;
         e.preventDefault();
     } else if (e.key === 'Up' || e.key === 'ArrowUp') {
-        targetPaddleX -= movementStep;
+        targetPaddleX += movementStep;
         e.preventDefault();
     } else if (e.key === 'p' || e.key === 'P') {
         togglePause();
