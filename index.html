@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Breakout Game for Rabbit R1</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            transform: rotate(-90deg);
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            touch-action: auto; /* Prevent default touch actions */
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border: 2px solid #444;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        canvas {
+            background-color: #000;
+            display: block;
+        }
+        
+        #gameOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-size: 24px;
+            z-index: 10;
+        }
+        
+        #gameOverlay.hidden {
+            display: none;
+        }
+        
+        #gameOverlay h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            color: #FF8C00;
+        }
+        
+        #gameOverlay p {
+            margin: 10px 0;
+        }
+        
+        #startButton, #restartButton {
+            background-color: #FF8C00;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 18px;
+            margin-top: 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        #startButton:hover, #restartButton:hover {
+            background-color: #FF6600;
+        }
+        
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+        
+        #score, #lives {
+            position: absolute;
+            color: white;
+            font-size: 16px;
+            padding: 10px;
+            z-index: 5;
+        }
+        
+        #score {
+            top: 0;
+            left: 0;
+        }
+        
+        #lives {
+            top: 0;
+            right: 0;
+        }
+        
+        /* Performance optimization: reduce animations */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+                animation: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+        <div id="score">Score: 0</div>
+        <div id="lives">Lives: 3</div>
+        <div id="gameOverlay">
+            <h1>BREAKOUT</h1>
+            <p>Classic arcade game for Rabbit R1</p>
+            <div id="controls">
+                <p>Use LEFT/RIGHT arrow keys or scroll wheel to move paddle</p>
+                <p>Break all bricks to win!</p>
+            </div>
+            <button id="startButton">START GAME</button>
+        </div>
+    </div>
+
+    <script>
+        // Game Constants and Variables - Cache frequently accessed elements
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false }); // Optimization: disable alpha for better performance
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        const gameOverlay = document.getElementById('gameOverlay');
+        const startButton = document.getElementById('startButton');
+        
+        // Game dimensions
+        const GAME_WIDTH = canvas.width;
+        const GAME_HEIGHT = canvas.height;
+        
+        // Game state
+        let gameState = 'start'; // start, playing, paused, levelComplete, gameover
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let lastTime = 0;
+        let frameID = null;
+        let isPaused = false;
+        
+        // Performance monitoring
+        let fpsCounter = 0;
+        let fpsTimer = 0;
+        let currentFps = 0;
+        const PERFORMANCE_MODE = true; // Enable performance optimizations for low-powered devices
+        
+        // Paddle properties
+        const paddleHeight = 15;
+        const paddleWidth = 100;
+        let paddleX = (GAME_WIDTH - paddleWidth) / 2;
+        const paddleSpeed = 8;
+        let targetPaddleX = paddleX; // For smooth paddle movement
+        
+        // Ball properties
+        const ballRadius = 8;
+        let ballX = GAME_WIDTH / 2;
+        let ballY = GAME_HEIGHT - paddleHeight - ballRadius - 10;
+        let ballSpeedX = 4;
+        let ballSpeedY = -4;
+        const maxBallSpeed = 10; // Reduced from 12 for better control on R1
+        
+        // Brick properties
+        const brickRowCount = 8;
+        const brickColumnCount = 12;
+        const brickWidth = 45;
+        const brickHeight = 20;
+        const brickPadding = 5;
+        const brickOffsetTop = 60;
+        const brickOffsetLeft = 30;
+        
+        // Brick colors and point values
+        const brickColors = [
+            { color: '#FF0000', points: 7 }, // Red (top rows)
+            { color: '#FF0000', points: 7 },
+            { color: '#FFA500', points: 5 }, // Orange
+            { color: '#FFA500', points: 5 },
+            { color: '#00FF00', points: 3 }, // Green
+            { color: '#00FF00', points: 3 },
+            { color: '#FFFF00', points: 1 }, // Yellow (bottom rows)
+            { color: '#FFFF00', points: 1 }
+        ];
+        
+        // Create bricks array
+        let bricks = [];
+        let activeBrickCount = 0;
+        
+        // Input handling
+        let rightPressed = false;
+        let leftPressed = false;
+        let lastWheelEvent = 0;
+        const WHEEL_THROTTLE_MS = 50; // Throttle wheel events for better performance
+        
+        // Sound effects (placeholders for future implementation)
+        let soundEnabled = true;
+        
+        // Initialize bricks
+        function initBricks() {
+            bricks = [];
+            activeBrickCount = 0;
+            
+            for (let r = 0; r < brickRowCount; r++) {
+                bricks[r] = [];
+                for (let c = 0; c < brickColumnCount; c++) {
+                    const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+                    const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+                    bricks[r][c] = { 
+                        x: brickX, 
+                        y: brickY, 
+                        status: 1, 
+                        color: brickColors[r].color, 
+                        points: brickColors[r].points 
+                    };
+                    activeBrickCount++;
+                }
+            }
+        }
+        
+        // Reset game
+        function resetGame() {
+            score = 0;
+            lives = 3;
+            level = 1;
+            updateScore();
+            updateLives();
+            initBricks();
+            resetBall();
+        }
+        
+        // Reset ball position
+        function resetBall() {
+            ballX = GAME_WIDTH / 2;
+            ballY = GAME_HEIGHT - paddleHeight - ballRadius - 10;
+            
+            // Randomize initial ball direction slightly
+            ballSpeedX = (Math.random() * 3 + 2) * (Math.random() < 0.5 ? 1 : -1);
+            ballSpeedY = -4;
+            
+            // Reset paddle position
+            paddleX = (GAME_WIDTH - paddleWidth) / 2;
+            targetPaddleX = paddleX;
+        }
+        
+        // Update score display
+        function updateScore() {
+            scoreElement.textContent = `Score: ${score}`;
+        }
+        
+        // Update lives display
+        function updateLives() {
+            livesElement.textContent = `Lives: ${lives}`;
+        }
+        
+        // Draw the paddle
+        function drawPaddle() {
+            ctx.fillStyle = '#0095DD';
+            ctx.fillRect(Math.round(paddleX), GAME_HEIGHT - paddleHeight, paddleWidth, paddleHeight);
+        }
+        
+        // Draw the ball
+        function drawBall() {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(Math.round(ballX), Math.round(ballY), ballRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Draw the bricks - optimized to only draw active bricks
+        function drawBricks() {
+            ctx.strokeStyle = '#000';
+            
+            for (let r = 0; r < brickRowCount; r++) {
+                for (let c = 0; c < brickColumnCount; c++) {
+                    if (bricks[r][c].status === 1) {
+                        const brickX = bricks[r][c].x;
+                        const brickY = bricks[r][c].y;
+                        
+                        ctx.fillStyle = bricks[r][c].color;
+                        ctx.fillRect(brickX, brickY, brickWidth, brickHeight);
+                        ctx.strokeRect(brickX, brickY, brickWidth, brickHeight);
+                    }
+                }
+            }
+        }
+        
+        // Check for collisions with bricks - optimized collision detection
+        function collisionDetection() {
+            // Only check collision if ball is in the brick area
+            if (ballY - ballRadius > brickOffsetTop + (brickRowCount * (brickHeight + brickPadding))) {
+                return; // Ball is below brick area, skip collision checks
+            }
+            
+            // Calculate which brick the ball might be hitting
+            const potentialBrickColumn = Math.floor((ballX - brickOffsetLeft) / (brickWidth + brickPadding));
+            const potentialBrickRow = Math.floor((ballY - brickOffsetTop) / (brickHeight + brickPadding));
+            
+            // Check if potential brick indices are valid
+            if (
+                potentialBrickRow >= 0 && 
+                potentialBrickRow < brickRowCount && 
+                potentialBrickColumn >= 0 && 
+                potentialBrickColumn < brickColumnCount
+            ) {
+                // Check nearby bricks (3x3 grid around potential collision)
+                for (let r = Math.max(0, potentialBrickRow - 1); r <= Math.min(brickRowCount - 1, potentialBrickRow + 1); r++) {
+                    for (let c = Math.max(0, potentialBrickColumn - 1); c <= Math.min(brickColumnCount - 1, potentialBrickColumn + 1); c++) {
+                        const brick = bricks[r][c];
+                        if (brick.status === 1) {
+                            // Check if ball is inside brick boundaries
+                            if (
+                                ballX > brick.x - ballRadius &&
+                                ballX < brick.x + brickWidth + ballRadius &&
+                                ballY > brick.y - ballRadius &&
+                                ballY < brick.y + brickHeight + ballRadius
+                            ) {
+                                // Determine collision side for realistic bounce
+                                const centerX = brick.x + brickWidth / 2;
+                                const centerY = brick.y + brickHeight / 2;
+                                const dx = Math.abs(ballX - centerX);
+                                const dy = Math.abs(ballY - centerY);
+                                
+                                // If horizontal distance is greater, hit is on left/right side
+                                if (dx / (brickWidth / 2) > dy / (brickHeight / 2)) {
+                                    ballSpeedX = -ballSpeedX;
+                                } else {
+                                    ballSpeedY = -ballSpeedY;
+                                }
+                                
+                                brick.status = 0;
+                                activeBrickCount--;
+                                score += brick.points;
+                                updateScore();
+                                
+                                // Check if all bricks are cleared
+                                if (activeBrickCount === 0) {
+                                    levelComplete();
+                                }
+                                
+                                // Only handle one collision per frame for better performance
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Level complete handler
+        function levelComplete() {
+            // Level complete
+            level++;
+            
+            // Increase difficulty (but cap it for better playability on R1)
+            const speedIncrease = Math.min(1.1, 1 + (0.05 * level));
+            ballSpeedX *= speedIncrease;
+            ballSpeedY *= speedIncrease;
+            
+            // Reset ball and bricks for next level
+            resetBall();
+            initBricks();
+            
+            // Brief pause before next level
+            gameState = 'levelComplete';
+            gameOverlay.innerHTML = `
+                <h1>LEVEL ${level-1} COMPLETE!</h1>
+                <p>Score: ${score}</p>
+                <p>Get ready for level ${level}</p>
+            `;
+            gameOverlay.classList.remove('hidden');
+            
+            setTimeout(() => {
+                gameOverlay.classList.add('hidden');
+                gameState = 'playing';
+            }, 2000);
+        }
+        
+        // Move the paddle with smooth acceleration
+        function movePaddle(deltaTime) {
+            // Calculate target position based on input
+            if (rightPressed && targetPaddleX < GAME_WIDTH - paddleWidth) {
+                targetPaddleX += paddleSpeed * (deltaTime / 16); // Normalize by frame time
+            } else if (leftPressed && targetPaddleX > 0) {
+                targetPaddleX -= paddleSpeed * (deltaTime / 16);
+            }
+            
+            // Constrain target position
+            targetPaddleX = Math.max(0, Math.min(GAME_WIDTH - paddleWidth, targetPaddleX));
+            
+            // Smooth movement towards target (easing)
+            const paddleLerp = 0.2;
+            paddleX += (targetPaddleX - paddleX) * paddleLerp;
+            
+            // Ensure paddle stays within boundaries
+            paddleX = Math.max(0, Math.min(GAME_WIDTH - paddleWidth, paddleX));
+        }
+        
+        // Move the ball
+        function moveBall(deltaTime) {
+            // Scale movement by delta time for consistent speed regardless of frame rate
+            const timeScale = deltaTime / 16; // 16ms is target frame time (60fps)
+            
+            ballX += ballSpeedX * timeScale;
+            ballY += ballSpeedY * timeScale;
+            
+            // Wall collision (left/right)
+            if (ballX + ballRadius > GAME_WIDTH) {
+                ballX = GAME_WIDTH - ballRadius; // Prevent sticking to wall
+                ballSpeedX = -Math.abs(ballSpeedX);
+            } else if (ballX - ballRadius < 0) {
+                ballX = ballRadius; // Prevent sticking to wall
+                ballSpeedX = Math.abs(ballSpeedX);
+            }
+            
+            // Wall collision (top)
+            if (ballY - ballRadius < 0) {
+                ballY = ballRadius; // Prevent sticking to wall
+                ballSpeedY = Math.abs(ballSpeedY);
+            }
+            
+            // Paddle collision
+            if (
+                ballY + ballRadius > GAME_HEIGHT - paddleHeight &&
+                ballY + ballRadius < GAME_HEIGHT &&
+                ballX > paddleX &&
+                ballX < paddleX + paddleWidth
+            ) {
+                // Calculate impact point on paddle (normalized from -1 to 1)
+                const impactPoint = (ballX - (paddleX + paddleWidth / 2)) / (paddleWidth / 2);
+                
+                // Adjust ball direction based on impact point
+                ballSpeedX = maxBallSpeed * 0.7 * impactPoint;
+                ballSpeedY = -Math.abs(ballSpeedY); // Always bounce up
+                
+                // Increase speed slightly with each paddle hit
+                const currentSpeed = Math.sqrt(ballSpeedX * ballSpeedX + ballSpeedY * ballSpeedY);
+                if (currentSpeed < maxBallSpeed) {
+                    const speedFactor = 1.05;
+                    ballSpeedX *= speedFactor;
+                    ballSpeedY *= speedFactor;
+                }
+                
+                // Prevent ball from getting stuck in paddle
+                ballY = GAME_HEIGHT - paddleHeight - ballRadius;
+            }
+            
+            // Bottom collision (lose life)
+            if (ballY + ballRadius > GAME_HEIGHT) {
+                lives--;
+                updateLives();
+                
+                if (lives <= 0) {
+                    gameState = 'gameover';
+                    showGameOver();
+                } else {
+                    resetBall();
+                }
+            }
+        }
+        
+        // Show game over screen
+        function showGameOver() {
+            gameOverlay.innerHTML = `
+                <h1>GAME OVER</h1>
+                <p>Final Score: ${score}</p>
+                <p>Level Reached: ${level}</p>
+                <button id="restartButton">PLAY AGAIN</button>
+            `;
+            gameOverlay.classList.remove('hidden');
+            
+            document.getElementById('restartButton').addEventListener('click', () => {
+                resetGame();
+                gameState = 'playing';
+                gameOverlay.classList.add('hidden');
+            });
+        }
+        
+        // Main game loop with delta time for consistent speed
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // FPS counter
+            fpsCounter++;
+            fpsTimer += deltaTime;
+            if (fpsTimer >= 1000) {
+                currentFps = fpsCounter;
+                fpsCounter = 0;
+                fpsTimer = 0;
+                
+                // Adaptive performance mode
+                if (PERFORMANCE_MODE && currentFps < 30) {
+                    // Further reduce visual quality if FPS is low
+                    canvas.style.imageRendering = 'pixelated';
+                }
+            }
+            
+            // Clear canvas - optimized clearing only the necessary areas
+            if (PERFORMANCE_MODE) {
+                // Clear only the areas that need updating (ball and paddle)
+                ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            } else {
+                ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            }
+            
+            // Draw game elements
+            drawBricks();
+            drawPaddle();
+            drawBall();
+            
+            // Game logic
+            if (gameState === 'playing' && !isPaused) {
+                movePaddle(deltaTime);
+                moveBall(deltaTime);
+                collisionDetection();
+            }
+            
+            // Request next animation frame
+            frameID = requestAnimationFrame(gameLoop);
+        }
+        
+        // Keyboard event handlers
+        function keyDownHandler(e) {
+            if (e.key === 'Right' || e.key === 'ArrowRight') {
+                rightPressed = true;
+                e.preventDefault();
+            } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+                leftPressed = true;
+                e.preventDefault();
+            } else if (e.key === 'p' || e.key === 'P') {
+                togglePause();
+            }
+        }
+        
+        function keyUpHandler(e) {
+            if (e.key === 'Right' || e.key === 'ArrowRight') {
+                rightPressed = false;
+            } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+                leftPressed = false;
+            }
+        }
+        
+        // Toggle pause state
+        function togglePause() {
+            if (gameState === 'playing') {
+                isPaused = !isPaused;
+                if (isPaused) {
+                    gameOverlay.innerHTML = `
+                        <h1>PAUSED</h1>
+                        <p>Press P to resume</p>
+                    `;
+                    gameOverlay.classList.remove('hidden');
+                } else {
+                    gameOverlay.classList.add('hidden');
+                }
+            }
+        }
+        
+        // Mouse/touch controls for paddle movement - with throttling for performance
+        let lastMouseMoveTime = 0;
+        function mouseMoveHandler(e) {
+            const now = Date.now();
+            if (now - lastMouseMoveTime < 16) return; // Limit to ~60fps
+            lastMouseMoveTime = now;
+            
+            if (gameState === 'playing' && !isPaused) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const relativeX = (e.clientX - rect.left) * scaleX;
+                
+                if (relativeX > 0 && relativeX < GAME_WIDTH) {
+                    targetPaddleX = relativeX - paddleWidth / 2;
+                }
+                
+                e.preventDefault();
+            }
+        }
+        
+        // Wheel event handler for Rabbit R1 scroll wheel - with debouncing
+        function wheelHandler(e) {
+            const now = Date.now();
+            if (now - lastWheelEvent < WHEEL_THROTTLE_MS) return; // Throttle events
+            lastWheelEvent = now;
+            
+            if (gameState === 'playing' && !isPaused) {
+                // Determine direction and move paddle
+                // Use smaller movements for better control on R1
+                const wheelSensitivity = 20; // Reduced sensitivity for R1 scroll wheel
+                
+                if (e.deltaY > 0) {
+                    // Scroll down - move right
+                    targetPaddleX += wheelSensitivity;
+                } else {
+                    // Scroll up - move left
+                    targetPaddleX -= wheelSensitivity;
+                }
+                
+                // Prevent default scrolling behavior
+                e.preventDefault();
+            }
+        }
+        
+        // Touch controls for mobile devices - with throttling
+        let lastTouchMoveTime = 0;
+        function touchMoveHandler(e) {
+            const now = Date.now();
+            if (now - lastTouchMoveTime < 16) return; // Limit to ~60fps
+            lastTouchMoveTime = now;
+            
+            if (gameState === 'playing' && !isPaused) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const relativeX = (e.touches[0].clientX - rect.left) * scaleX;
+                
+                if (relativeX > 0 && relativeX < GAME_WIDTH) {
+                    targetPaddleX = relativeX - paddleWidth / 2;
+                }
+                
+                // Prevent default touch behavior
+                e.preventDefault();
+            }
+        }
+        
+        // Clean up event listeners when game is not active
+        function setupEventListeners() {
+            document.addEventListener('keydown', keyDownHandler);
+            document.addEventListener('keyup', keyUpHandler);
+            document.addEventListener('mousemove', mouseMoveHandler);
+            document.addEventListener('wheel', wheelHandler, { passive: false });
+            document.addEventListener('touchmove', touchMoveHandler, { passive: false });
+            
+            // Start button event listener
+            startButton.addEventListener('click', startGame);
+        }
+        
+        function removeEventListeners() {
+            document.removeEventListener('keydown', keyDownHandler);
+            document.removeEventListener('keyup', keyUpHandler);
+            document.removeEventListener('mousemove', mouseMoveHandler);
+            document.removeEventListener('wheel', wheelHandler);
+            document.removeEventListener('touchmove', touchMoveHandler);
+        }
+        
+        // Start game function
+        function startGame() {
+            resetGame();
+            gameState = 'playing';
+            gameOverlay.classList.add('hidden');
+            
+            // Reset timing variables
+            lastTime = 0;
+            
+            // Start game loop if not already running
+            if (!frameID) {
+                frameID = requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        // Initialize game
+        function init() {
+            // Set up event listeners
+            setupEventListeners();
+            
+            // Initialize bricks
+            initBricks();
+            
+            // Start game loop
+            frameID = requestAnimationFrame(gameLoop);
+            
+            // Add visibility change handler to pause game when tab is not active
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && gameState === 'playing') {
+                    isPaused = true;
+                }
+            });
+        }
+        
+        // Start the game when page loads
+        window.onload = init;
+        
+        // Clean up resources when page unloads
+        window.onunload = () => {
+            if (frameID) {
+                cancelAnimationFrame(frameID);
+            }
+            removeEventListeners();
+        };
+    </script>
+</body>
+</html>
