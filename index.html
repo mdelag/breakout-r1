@@ -536,10 +536,10 @@
         
         // Keyboard event handlers
         function keyDownHandler(e) {
-            if (e.key === 'Up' || e.key === 'ArrowRight') {
+            if (e.key === 'Up' || e.key === 'ArrowUp') {
                 rightPressed = true;
                 e.preventDefault();
-            } else if (e.key === 'Down' || e.key === 'ArrowLeft') {
+            } else if (e.key === 'Down' || e.key === 'ArrowDown') {
                 leftPressed = true;
                 e.preventDefault();
             } else if (e.key === 'p' || e.key === 'P') {
@@ -548,9 +548,9 @@
         }
         
         function keyUpHandler(e) {
-            if (e.key === 'Up' || e.key === 'ArrowRight') {
+            if (e.key === 'Up' || e.key === 'ArrowUp') {
                 rightPressed = false;
-            } else if (e.key === 'Down' || e.key === 'ArrowLeft') {
+            } else if (e.key === 'Down' || e.key === 'ArrowDown') {
                 leftPressed = false;
             }
         }
